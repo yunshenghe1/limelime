@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>线稿·纸飞机飞行</title>
+<style>
+*{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+:root{
+  --blue:#0077B6;
+}
+body{
+  background:#fff;
+  overflow:hidden;
+  font-family:system-ui, sans-serif;
+  color:#000;
+}
+.page{
+  position:fixed;
+  inset:0;
+  width:100vw;
+  height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.hidden{
+  display:none !important;
+}
+
+/* 书本外层容器 */
+.book-wrap{
+  position:relative;
+  width:360px;
+  height:420px;
+  cursor:pointer;
+}
+
+/* 书本主体：轻微透视，不做剧烈翻转畸变 */
+.book{
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform: translate(-50%, -30%) perspective(1200px) rotateX(18deg);
+  transform-style: preserve-3d;
+  width: 320px;
+  height: 220px;
+  transition: transform 1.3s ease-in-out;
+}
+
+/* 左右封面 */
+.book-cover{
+  position:absolute;
+  top:0;
+  width:156px;
+  height:220px;
+  border:2px solid #000;
+  background:#fff;
+  transform-style:preserve-3d;
+  transition: transform 1.4s ease-in-out;
+}
+.book-cover.left{
+  left:4px;
+  transform-origin: right center;
+  transform: rotateY(0deg);
+}
+.book-cover.right{
+  right:4px;
+  transform-origin: left center;
+  transform: rotateY(0deg);
+}
+
+/* 书脊 */
+.book-spine{
+  position:absolute;
+  left:50%;
+  top:0;
+  transform:translateX(-50%);
+  width:4px;
+  height:220px;
+  background:#000;
+  z-index:3;
+}
+
+/* 内页：翻开后显示的平摊书页 */
+.pages{
+  position:absolute;
+  left:18px;
+  top:8px;
+  width:284px;
+  height:204px;
+  border:2px solid #000;
+  background:#fff;
+  z-index:1;
+  opacity:0;
+  transform: translateY(-8px);
+  transition: opacity 0.8s ease 0.4s, transform 0.8s ease 0.4s;
+}
+.pages::before,
+.pages::after{
+  content:"";
+  position:absolute;
+  left:0;
+  right:0;
+  height:1px;
+  background:#000;
+  opacity:0.3;
+}
+.pages::before{
+  top:42%;
+}
+.pages::after{
+  top:58%;
+}
+
+/* 翻开状态：书本微微抬起，左右封面向外展开 */
+.book.open{
+  transform: translate(-50%, -42%) perspective(1200px) rotateX(22deg);
+}
+.book.open .book-cover.left{
+  transform: rotateY(-150deg);
+}
+.book.open .book-cover.right{
+  transform: rotateY(150deg);
+}
+.book.open .pages{
+  opacity:1;
+  transform: translateY(0);
+}
+
+/* 纸飞机：悬浮在书页正上方 */
+.plane-wrap{
+  position:absolute;
+  left:50%;
+  top:32%;
+  transform: translate(-50%, 20px);
+  text-align:center;
+  cursor:pointer;
+  opacity:0;
+  transition: opacity 0.6s ease 0.9s, transform 0.6s ease 0.9s;
+  pointer-events:none;
+  z-index:10;
+}
+.plane-wrap.show{
+  opacity:1;
+  transform: translate(-50%, -10px);
+  pointer-events:auto;
+}
+.plane-wrap .paper-plane{
+  width:110px;
+  height:66px;
+  animation: floatUp 2.6s ease-in-out infinite;
+  filter: drop-shadow(0 8px 10px rgba(0,0,0,0.12));
+}
+@keyframes floatUp{
+  0%,100%{ transform: translateY(0) rotate(-6deg); }
+  50%{ transform: translateY(-12px) rotate(-6deg); }
+}
+.tip{
+  margin-top:10px;
+  font-size:14px;
+  color:var(--blue);
+}
+
+.book-tip{
+  position:absolute;
+  bottom:8vh;
+  left:50%;
+  transform:translateX(-50%);
+}
+
+#gameCanvas{
+  display:block;
+  background:#fff;
+  cursor:none;
+}
+.score-panel{
+  position:fixed;
+  top:24px;
+  left:24px;
+  font-size:20px;
+  z-index:10;
+}
+.modal{
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  border:2px solid #000;
+  background:#fff;
+  padding:32px;
+  z-index:99;
+  text-align:center;
+  min-width:260px;
+}
+.modal p{
+  margin:10px 0;
+  font-size:15px;
+}
+.modal button{
+  margin:10px 8px;
+  padding:8px 16px;
+  border:1px solid #000;
+  background:#fff;
+  cursor:pointer;
+  font-size:15px;
+}
+.modal button:hover{
+  background:#000;
+  color:#fff;
+}
+</style>
+</head>
+<body>
+  <!-- 首页书本场景 -->
+  <div id="bookPage" class="page">
+    <div class="book-wrap" id="bookClickBox">
+      <div class="book" id="book">
+        <div class="book-cover left"></div>
+        <div class="book-cover right"></div>
+        <div class="book-spine"></div>
+        <div class="pages"></div>
+      </div>
+
+      <div id="planeWrap" class="plane-wrap">
+        <svg class="paper-plane" viewBox="0 0 100 60">
+          <path d="M0 30 L90 10 L90 50 L0 30 M90 10 L70 30 L90 50" fill="none" stroke="#0077B6" stroke-width="2"/>
+        </svg>
+        <p class="tip">点击纸飞机，驶入隧道</p>
+      </div>
+    </div>
+
+    <p class="book-tip">点击书本翻开</p>
+  </div>
+
+  <!-- 游戏场景 -->
+  <div id="gamePage" class="page hidden">
+    <canvas id="gameCanvas"></canvas>
+    <div class="score-panel">分数：<span id="scoreText">0</span></div>
+    <div id="startTipModal" class="modal">
+      <h3>游戏说明</h3>
+      <p>🖱️电脑：鼠标控制，WASD微调</p>
+      <p>📱手机：手指触屏滑动控制</p>
+      <p>躲避从四周飞来的线稿障碍物，坚持越久分数越高</p>
+      <button id="startGameBtn">确认开始</button>
+    </div>
+    <div id="gameOverModal" class="modal hidden">
+      <h3>撞上障碍物了</h3>
+      <p>最终分数：<span id="finalScore">0</span></p>
+      <button id="restartBtn">再来一次</button>
+      <button id="homeBtn">返回主页</button>
+    </div>
+  </div>
+
+<script>
+let audioCtx = null;
+
+function initAudio(){
+  if(!audioCtx){
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if(audioCtx.state === "suspended"){
+    audioCtx.resume();
+  }
+}
+
+function playBookSound(){
+  if(!audioCtx) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g);
+  g.connect(audioCtx.destination);
+  o.type = "sine";
+  o.frequency.setValueAtTime(220, audioCtx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.1);
+  g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+  o.start(audioCtx.currentTime);
+  o.stop(audioCtx.currentTime + 0.2);
+}
+
+function playPlaneSound(){
+  if(!audioCtx) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g);
+  g.connect(audioCtx.destination);
+  o.type = "triangle";
+  o.frequency.setValueAtTime(300, audioCtx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.15);
+  g.gain.setValueAtTime(0.12, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.18);
+  o.start(audioCtx.currentTime);
+  o.stop(audioCtx.currentTime + 0.18);
+}
+
+function playStartSound(){
+  if(!audioCtx) return;
+  const notes = [523, 659, 784];
+  notes.forEach((f, i) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.type = "sine";
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0.1, audioCtx.currentTime + i * 0.12);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.12 + 0.25);
+    o.start(audioCtx.currentTime + i * 0.12);
+    o.stop(audioCtx.currentTime + i * 0.12 + 0.25);
+  });
+}
+
+function playGameOverSound(){
+  if(!audioCtx) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g);
+  g.connect(audioCtx.destination);
+  o.type = "sawtooth";
+  o.frequency.setValueAtTime(320, audioCtx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(120, audioCtx.currentTime + 0.35);
+  g.gain.setValueAtTime(0.12, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+  o.start(audioCtx.currentTime);
+  o.stop(audioCtx.currentTime + 0.4);
+}
+
+const bookPage = document.getElementById("bookPage");
+const gamePage = document.getElementById("gamePage");
+const bookClickBox = document.getElementById("bookClickBox");
+const book = document.getElementById("book");
+const planeWrap = document.getElementById("planeWrap");
+const startTipModal = document.getElementById("startTipModal");
+const gameOverModal = document.getElementById("gameOverModal");
+const startGameBtn = document.getElementById("startGameBtn");
+const restartBtn = document.getElementById("restartBtn");
+const homeBtn = document.getElementById("homeBtn");
+const scoreText = document.getElementById("scoreText");
+const finalScore = document.getElementById("finalScore");
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+let bookOpened = false;
+let gameRunning = false;
+let score = 0;
+let lastTime = 0;
+let spawnTimer = 0;
+let spawnInterval = 900;
+let speed = 2.6;
+let animId = null;
+let clouds = [];
+
+const plane = { x: 0, y: 0, targetX: 0, targetY: 0, w: 36, h: 22, tilt: 0 };
+let obstacles = [];
+let trail = [];
+let keys = {};
+
+function resizeCanvas(){
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  plane.x = canvas.width / 2;
+  plane.y = canvas.height / 2;
+  plane.targetX = plane.x;
+  plane.targetY = plane.y;
+}
+
+window.addEventListener("resize", () => {
+  resizeCanvas();
+});
+
+// 点击书本翻开
+bookClickBox.addEventListener("click", () => {
+  initAudio();
+  playBookSound();
+  if(bookOpened) return;
+  bookOpened = true;
+  book.classList.add("open");
+  setTimeout(() => {
+    planeWrap.classList.add("show");
+  }, 900);
+});
+
+// 点击纸飞机进入游戏
+planeWrap.addEventListener("click", (e) => {
+  e.stopPropagation();
+  initAudio();
+  playPlaneSound();
+  bookPage.classList.add("hidden");
+  gamePage.classList.remove("hidden");
+  resizeCanvas();
+  startTipModal.classList.remove("hidden");
+  gameOverModal.classList.add("hidden");
+});
+
+startGameBtn.addEventListener("click", () => {
+  initAudio();
+  playStartSound();
+  startTipModal.classList.add("hidden");
+  startGame();
+});
+
+restartBtn.addEventListener("click", () => {
+  initAudio();
+  playStartSound();
+  gameOverModal.classList.add("hidden");
+  startGame();
+});
+
+homeBtn.addEventListener("click", () => {
+  stopGame();
+  gamePage.classList.add("hidden");
+  bookPage.classList.remove("hidden");
+  bookOpened = false;
+  book.classList.remove("open");
+  planeWrap.classList.remove("show");
+});
+
+document.addEventListener("keydown", (e) => {
+  keys[e.key.toLowerCase()] = true;
+});
+document.addEventListener("keyup", (e) => {
+  keys[e.key.toLowerCase()] = false;
+});
+
+// 鼠标/触屏控制
+canvas.addEventListener("mousemove", (e) => {
+  plane.targetX = e.clientX;
+  plane.targetY = e.clientY;
+});
+canvas.addEventListener("touchmove", (e) => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  plane.targetX = touch.clientX;
+  plane.targetY = touch.clientY;
+});
+canvas.addEventListener("touchstart", (e) => {
+  const touch = e.touches[0];
+  plane.targetX = touch.clientX;
+  plane.targetY = touch.clientY;
+});
+
+function startGame(){
+  score = 0;
+  speed = 2.6;
+  spawnInterval = 900;
+  spawnTimer = 0;
+  obstacles = [];
+  trail = [];
+  clouds = [];
+  scoreText.textContent = "0";
+  resizeCanvas();
+  gameRunning = true;
+  lastTime = performance.now();
+  cancelAnimationFrame(animId);
+
+  // 初始化云层
+  for(let i = 0; i < 14; i++){
+    clouds.push({
+      z: 200 + i * 180,
+      angle: Math.random() * Math.PI * 2,
+      radius: 40 + Math.random() * 120,
+      size: 20 + Math.random() * 30
+    });
+  }
+
+  animId = requestAnimationFrame(loop);
+}
+
+function stopGame(){
+  gameRunning = false;
+  cancelAnimationFrame(animId);
+}
+
+// 生成障碍物（从四周飞向中心）
+function spawnObstacle(){
+  const size = 28 + Math.random() * 36;
+  const edge = Math.floor(Math.random() * 4);
+  let x, y;
+  if(edge === 0){
+    x = Math.random() * canvas.width;
+    y = -size;
+  } else if(edge === 1){
+    x = canvas.width + size;
+    y = Math.random() * canvas.height;
+  } else if(edge === 2){
+    x = Math.random() * canvas.width;
+    y = canvas.height + size;
+  } else {
+    x = -size;
+    y = Math.random() * canvas.height;
+  }
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const angle = Math.atan2(cy - y, cx - x);
+  obstacles.push({ x, y, size, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed });
+}
+
+// 第一视角云层隧道
+function drawCloudTunnel(){
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const time = performance.now() / 1000;
+
+  // 中心亮光背景
+  const bgGradient = ctx.createRadialGradient(cx, cy, 20, cx, cy, Math.max(canvas.width, canvas.height) * 0.7);
+  bgGradient.addColorStop(0, "rgba(255, 255, 255, 1)");
+  bgGradient.addColorStop(0.35, "rgba(250, 250, 250, 1)");
+  bgGradient.addColorStop(0.7, "rgba(230, 230, 230, 1)");
+  bgGradient.addColorStop(1, "rgba(180, 180, 180, 1)");
+  ctx.fillStyle = bgGradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // 云层向前推进
+  for(let i = 0; i < clouds.length; i++){
+    clouds[i].z -= speed * 2.2;
+    if(clouds[i].z < 10){
+      clouds[i].z = 2400 + Math.random() * 400;
+      clouds[i].angle = Math.random() * Math.PI * 2;
+      clouds[i].radius = 30 + Math.random() * 140;
+      clouds[i].size = 18 + Math.random() * 34;
+    }
+  }
+
+  // 按z轴排序，远先近后
+  clouds.sort((a, b) => a.z - b.z);
+
+  // 绘制云块
+  for(const cloud of clouds){
+    const scale = 320 / cloud.z;
+    const x = cx + Math.cos(cloud.angle) * cloud.radius * scale;
+    const y = cy + Math.sin(cloud.angle) * cloud.radius * scale * 0.7;
+    const size = cloud.size * scale;
+    const alpha = Math.min(1, 140 / cloud.z);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    drawIrregularCloud(x, y, size);
+    ctx.restore();
+  }
+
+  // 中心纵深细线
+  ctx.strokeStyle = "rgba(0,0,0,0.08)";
+  ctx.lineWidth = 1;
+  for(let i = 0; i < 12; i++){
+    const a = (i / 12) * Math.PI * 2 + time * 0.2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a) * 120, cy + Math.sin(a) * 80);
+    ctx.stroke();
+  }
+}
+
+// 手绘不规则云块
+function drawIrregularCloud(x, y, size){
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = "#000";
+
+  ctx.beginPath();
+  ctx.moveTo(x - size * 0.85, y);
+  ctx.quadraticCurveTo(x - size * 1.05, y - size * 0.5, x - size * 0.45, y - size * 0.55);
+  ctx.quadraticCurveTo(x - size * 0.1, y - size * 0.75, x + size * 0.3, y - size * 0.45);
+  ctx.quadraticCurveTo(x + size * 0.75, y - size * 0.4, x + size * 0.9, y);
+  ctx.quadraticCurveTo(x + size * 0.7, y + size * 0.35, x + size * 0.2, y + size * 0.25);
+  ctx.quadraticCurveTo(x - size * 0.4, y + size * 0.4, x - size * 0.85, y);
+  ctx.stroke();
+
+  // 内部阴影线
+  ctx.globalAlpha = ctx.globalAlpha * 0.4;
+  ctx.beginPath();
+  ctx.moveTo(x - size * 0.4, y - size * 0.1);
+  ctx.quadraticCurveTo(x, y + size * 0.15, x + size * 0.4, y - size * 0.05);
+  ctx.stroke();
+}
+
+// 纸飞机尾迹
+function drawTrail(){
+  if(trail.length < 2) return;
+  ctx.strokeStyle = "#0077B6";
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.4;
+  ctx.beginPath();
+  for(let i = 0; i < trail.length; i++){
+    if(i === 0) ctx.moveTo(trail[i].x, trail[i].y);
+    else ctx.lineTo(trail[i].x, trail[i].y);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+// 绘制纸飞机
+function drawPlane(){
+  ctx.save();
+  ctx.translate(plane.x, plane.y);
+  ctx.rotate(plane.tilt);
+  ctx.strokeStyle = "#0077B6";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-plane.w / 2, 0);
+  ctx.lineTo(plane.w / 2, -plane.h / 2);
+  ctx.lineTo(plane.w / 2, plane.h / 2);
+  ctx.closePath();
+  ctx.moveTo(plane.w / 2, -plane.h / 2);
+  ctx.lineTo(plane.w / 4, 0);
+  ctx.lineTo(plane.w / 2, plane.h / 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// 绘制障碍物
+function drawObstacles(){
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 2;
+  for(const o of obstacles){
+    ctx.beginPath();
+    ctx.moveTo(o.x - o.size / 2, o.y);
+    ctx.lineTo(o.x, o.y - o.size / 2);
+    ctx.lineTo(o.x + o.size / 2, o.y);
+    ctx.lineTo(o.x, o.y + o.size / 2);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(o.x - o.size / 4, o.y);
+    ctx.lineTo(o.x, o.y - o.size / 4);
+    ctx.lineTo(o.x + o.size / 4, o.y);
+    ctx.lineTo(o.x, o.y + o.size / 4);
+    ctx.closePath();
+    ctx.stroke();
+  }
+}
+
+// 碰撞检测
+function checkCollision(){
+  for(const o of obstacles){
+    const dx = plane.x - o.x;
+    const dy = plane.y - o.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if(distance < plane.w / 2 + o.size / 2 - 6){
+      return true;
+    }
+  }
+  return false;
+}
+
+// 主循环
+function loop(now){
+  if(!gameRunning) return;
+  const dt = now - lastTime;
+  lastTime = now;
+
+  // WASD微调
+  if(keys["w"] || keys["arrowup"]) plane.targetY -= 3;
+  if(keys["s"] || keys["arrowdown"]) plane.targetY += 3;
+  if(keys["a"] || keys["arrowleft"]) plane.targetX -= 3;
+  if(keys["d"] || keys["arrowright"]) plane.targetX += 3;
+
+  // 平滑跟随
+  plane.x += (plane.targetX - plane.x) * 0.15;
+  plane.y += (plane.targetY - plane.y) * 0.15;
+  plane.tilt = (plane.targetX - plane.x) * 0.03;
+
+  // 边界限制
+  plane.x = Math.max(plane.w/2, Math.min(canvas.width - plane.w/2, plane.x));
+  plane.y = Math.max(plane.h/2, Math.min(canvas.height - plane.h/2, plane.y));
+
+  // 记录尾迹
+  trail.push({x: plane.x, y: plane.y});
+  if(trail.length > 20) trail.shift();
+
+  // 生成障碍物
+  spawnTimer += dt;
+  if(spawnTimer >= spawnInterval){
+    spawnTimer = 0;
+    spawnObstacle();
+    spawnInterval = Math.max(380, spawnInterval - 8);
+    speed += 0.015;
+  }
+
+  // 更新障碍物位置
+  for(let i = obstacles.length - 1; i >= 0; i--){
+    const o = obstacles[i];
+    o.x += o.vx;
+    o.y += o.vy;
+    if(
+      o.x < -120 ||
+      o.x > canvas.width + 120 ||
+      o.y < -120 ||
+      o.y > canvas.height + 120
+    ){
+      obstacles.splice(i, 1);
+    }
+  }
+
+  // 计分
+  score += dt / 100;
+  scoreText.textContent = Math.floor(score);
+
+  // 镜头晃动
+  const shakeBase = 1.5;
+  const shakeExtra = Math.min(3, (speed - 2.6) * 1.2);
+  const shakeAmount = shakeBase + shakeExtra;
+  const shakeX = (Math.sin(now * 0.012) + Math.sin(now * 0.037)) * shakeAmount * 0.5;
+  const shakeY = (Math.sin(now * 0.018) + Math.cos(now * 0.029)) * shakeAmount * 0.5;
+
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+
+  // 绘制全部画面
+  drawCloudTunnel();
+  drawTrail();
+  drawObstacles();
+  drawPlane();
+
+  ctx.restore();
+
+  // 碰撞判定
+  if(checkCollision()){
+    stopGame();
+    playGameOverSound();
+    finalScore.textContent = Math.floor(score);
+    gameOverModal.classList.remove("hidden");
+    return;
+  }
+
+  animId = requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
